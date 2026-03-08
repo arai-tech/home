@@ -1,0 +1,631 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Tools — 血圧君 & 波形君</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@300;400;700&family=Space+Mono:wght@400;700&family=Zen+Kaku+Gothic+New:wght@300;400;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --border: rgba(255,255,255,0.07);
+    --text: #e8e6f0;
+    --muted: #6b6880;
+    --red: #e85d75;
+    --red-dim: rgba(232, 93, 117, 0.12);
+    --teal: #3dd6c8;
+    --teal-dim: rgba(61, 214, 200, 0.10);
+    --gold: #c8a96e;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Zen Kaku Gothic New', sans-serif;
+    font-weight: 300;
+    line-height: 1.7;
+    overflow-x: hidden;
+  }
+
+  /* ── NOISE OVERLAY ── */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 1000;
+    opacity: 0.4;
+  }
+
+  /* ── GRID LINES ── */
+  .grid-bg {
+    position: fixed;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 80px 24px 60px;
+    text-align: center;
+    overflow: hidden;
+  }
+
+  .hero-glow {
+    position: absolute;
+    width: 700px;
+    height: 700px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(232,93,117,0.08) 0%, rgba(61,214,200,0.05) 50%, transparent 70%);
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation: pulse-glow 6s ease-in-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes pulse-glow {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; }
+    50%       { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+  }
+
+  .eyebrow {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.25em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 28px;
+    opacity: 0;
+    animation: fade-up 0.8s 0.2s forwards;
+  }
+
+  .hero h1 {
+    font-family: 'Noto Serif JP', serif;
+    font-size: clamp(48px, 9vw, 110px);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.02em;
+    margin-bottom: 24px;
+    opacity: 0;
+    animation: fade-up 0.9s 0.4s forwards;
+  }
+
+  .hero h1 span.accent-red { color: var(--red); }
+  .hero h1 span.accent-teal { color: var(--teal); }
+
+  .hero-sub {
+    font-size: clamp(14px, 2vw, 17px);
+    color: var(--muted);
+    max-width: 480px;
+    margin-bottom: 56px;
+    opacity: 0;
+    animation: fade-up 0.9s 0.6s forwards;
+  }
+
+  .scroll-hint {
+    position: absolute;
+    bottom: 36px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    opacity: 0;
+    animation: fade-up 1s 1.2s forwards;
+  }
+
+  .scroll-hint-line {
+    width: 1px;
+    height: 40px;
+    background: linear-gradient(to bottom, transparent, var(--muted));
+    animation: extend-line 2s 1.8s ease-in-out infinite;
+  }
+
+  @keyframes extend-line {
+    0%, 100% { transform: scaleY(0); transform-origin: top; }
+    50% { transform: scaleY(1); transform-origin: top; }
+  }
+
+  /* ── TOOLS SECTION ── */
+  .tools {
+    position: relative;
+    z-index: 2;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 40px 24px 120px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+  }
+
+  @media (max-width: 768px) {
+    .tools { grid-template-columns: 1fr; }
+  }
+
+  .tool-card {
+    position: relative;
+    padding: 60px 48px 56px;
+    background: var(--surface);
+    overflow: hidden;
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .tool-card:hover { transform: translateY(-4px); }
+
+  .tool-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 2px;
+    transition: opacity 0.3s;
+    opacity: 0.7;
+  }
+
+  .tool-card:hover::before { opacity: 1; }
+
+  .card-blood::before { background: linear-gradient(90deg, var(--red), transparent); }
+  .card-wave::before  { background: linear-gradient(90deg, var(--teal), transparent); }
+
+  .card-blood { border-left: 2px solid var(--red); }
+  .card-wave  { border-left: 2px solid var(--teal); }
+
+  /* Corner decoration */
+  .tool-card::after {
+    content: '';
+    position: absolute;
+    bottom: 0; right: 0;
+    width: 80px; height: 80px;
+    border-top: 1px solid var(--border);
+    border-left: 1px solid var(--border);
+  }
+
+  .card-num {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.2em;
+    color: var(--muted);
+    margin-bottom: 32px;
+  }
+
+  .tool-icon {
+    width: 64px;
+    height: 64px;
+    margin-bottom: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 2px;
+    font-size: 28px;
+  }
+
+  .card-blood .tool-icon { background: var(--red-dim); }
+  .card-wave  .tool-icon { background: var(--teal-dim); }
+
+  .tool-name {
+    font-family: 'Noto Serif JP', serif;
+    font-size: clamp(32px, 4vw, 48px);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    margin-bottom: 8px;
+  }
+
+  .card-blood .tool-name { color: var(--red); }
+  .card-wave  .tool-name { color: var(--teal); }
+
+  .tool-name-en {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.18em;
+    color: var(--muted);
+    text-transform: uppercase;
+    margin-bottom: 28px;
+  }
+
+  .tool-desc {
+    font-size: 15px;
+    color: rgba(232,230,240,0.7);
+    line-height: 1.8;
+    margin-bottom: 36px;
+  }
+
+  /* Feature tags */
+  .tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 40px;
+  }
+
+  .tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    padding: 5px 12px;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--muted);
+  }
+
+  .card-blood .tag { border-color: rgba(232,93,117,0.25); color: rgba(232,93,117,0.75); }
+  .card-wave  .tag { border-color: rgba(61,214,200,0.25); color: rgba(61,214,200,0.75); }
+
+  /* CTA Button */
+  .btn-github {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 28px;
+    border: 1px solid;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    letter-spacing: 0.1em;
+    text-decoration: none;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn-github::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .btn-github:hover::before { transform: translateX(0); }
+  .btn-github span { position: relative; z-index: 1; }
+
+  .card-blood .btn-github {
+    color: var(--red);
+    border-color: rgba(232,93,117,0.4);
+  }
+  .card-blood .btn-github::before { background: var(--red-dim); }
+  .card-blood .btn-github:hover { border-color: var(--red); color: #fff; }
+
+  .card-wave .btn-github {
+    color: var(--teal);
+    border-color: rgba(61,214,200,0.4);
+  }
+  .card-wave .btn-github::before { background: var(--teal-dim); }
+  .card-wave .btn-github:hover { border-color: var(--teal); color: #fff; }
+
+  /* ── WAVEFORM DECORATION ── */
+  .wave-decoration {
+    position: absolute;
+    bottom: 24px;
+    right: 24px;
+    opacity: 0.15;
+    pointer-events: none;
+  }
+
+  .wave-path {
+    stroke-dasharray: 300;
+    stroke-dashoffset: 300;
+    animation: draw-wave 2s 1.5s ease forwards;
+  }
+
+  @keyframes draw-wave {
+    to { stroke-dashoffset: 0; }
+  }
+
+  /* ── DIVIDER ── */
+  .section-divider {
+    position: relative;
+    z-index: 2;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  .section-divider::before,
+  .section-divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  .divider-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.3em;
+    color: var(--muted);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  /* ── ABOUT ── */
+  .about {
+    position: relative;
+    z-index: 2;
+    max-width: 680px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+    text-align: center;
+  }
+
+  .about h2 {
+    font-family: 'Noto Serif JP', serif;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.3em;
+    color: var(--gold);
+    text-transform: uppercase;
+    margin-bottom: 20px;
+  }
+
+  .about p {
+    font-size: 15px;
+    color: var(--muted);
+    line-height: 1.9;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    position: relative;
+    z-index: 2;
+    border-top: 1px solid var(--border);
+    padding: 36px 24px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    max-width: 1100px;
+    margin: 0 auto;
+    flex-wrap: wrap;
+    gap: 16px;
+  }
+
+  footer p {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    letter-spacing: 0.08em;
+  }
+
+  .footer-links {
+    display: flex;
+    gap: 24px;
+  }
+
+  .footer-links a {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    color: var(--muted);
+    text-decoration: none;
+    letter-spacing: 0.08em;
+    transition: color 0.2s;
+  }
+
+  .footer-links a:hover { color: var(--text); }
+
+  /* ── ANIMATIONS ── */
+  @keyframes fade-up {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Scroll-triggered reveal */
+  .reveal {
+    opacity: 0;
+    transform: translateY(24px);
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+
+  .reveal.visible {
+    opacity: 1;
+    transform: translateY(0);
+  }
+
+  /* ── BLOOD PRESSURE CHART SVG ── */
+  .bp-viz {
+    position: absolute;
+    bottom: 16px;
+    right: 16px;
+    opacity: 0.12;
+    pointer-events: none;
+  }
+
+  /* Pulse animation on icon */
+  @keyframes heartbeat {
+    0%, 100% { transform: scale(1); }
+    14% { transform: scale(1.15); }
+    28% { transform: scale(1); }
+    42% { transform: scale(1.08); }
+    70% { transform: scale(1); }
+  }
+
+  .icon-heart { animation: heartbeat 1.8s ease-in-out infinite; display: inline-block; }
+
+  @keyframes wave-bob {
+    0%, 100% { transform: scaleY(1); }
+    50% { transform: scaleY(1.12); }
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+
+<!-- HERO -->
+<section class="hero">
+  <div class="hero-glow"></div>
+
+  <p class="eyebrow">Open Source Tools by GitHub</p>
+
+  <h1>
+    <span class="accent-red">血圧君</span><br>
+    <span style="font-size:0.45em; color: var(--muted); letter-spacing:0.05em;">×</span><br>
+    <span class="accent-teal">波形君</span>
+  </h1>
+
+  <p class="hero-sub">日常の健康管理と、設計現場のタイミングチャート作成を<br>シンプルに、美しく。</p>
+
+  <div class="scroll-hint">
+    <span>SCROLL</span>
+    <div class="scroll-hint-line"></div>
+  </div>
+</section>
+
+<!-- TOOLS GRID -->
+<section class="tools">
+
+  <!-- 血圧君 -->
+  <div class="tool-card card-blood reveal">
+    <p class="card-num">// Tool 01</p>
+
+    <div class="tool-icon">
+      <span class="icon-heart">🫀</span>
+    </div>
+
+    <h2 class="tool-name">血圧君</h2>
+    <p class="tool-name-en">Blood Pressure Tracker</p>
+
+    <p class="tool-desc">
+      毎日の血圧・脈拍を手軽に記録・可視化。
+      グラフで傾向を一目で把握し、健康管理をもっと身近に。
+      PWA対応でインストール不要、データはすべてローカルに保存されるのでプライバシーも安心。
+    </p>
+
+    <div class="tags">
+      <span class="tag">血圧記録</span>
+      <span class="tag">グラフ表示</span>
+      <span class="tag">PWA</span>
+      <span class="tag">ローカル動作</span>
+    </div>
+
+    <a href="https://arai-tech.github.io/ketsuatsu/" class="btn-github" target="_blank" rel="noopener">
+      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 6.1 18 6.4 18 6.4c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1.2.9 2.3v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+      <span>GitHub で見る</span>
+    </a>
+
+    <!-- decorative BP line -->
+    <svg class="bp-viz" width="160" height="80" viewBox="0 0 160 80" fill="none">
+      <polyline points="0,60 20,60 30,20 40,70 55,70 65,30 80,70 100,70 110,25 125,70 160,70"
+        stroke="#e85d75" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>
+  </div>
+
+  <!-- 波形君 -->
+  <div class="tool-card card-wave reveal" style="transition-delay:0.15s">
+    <p class="card-num">// Tool 02</p>
+
+    <div class="tool-icon">⚡</div>
+
+    <h2 class="tool-name">波形君</h2>
+    <p class="tool-name-en">Timing Chart Generator</p>
+
+    <p class="tool-desc">
+      ハードウェア・組み込み設計に欠かせない
+      タイミングチャートをブラウザで直感的に作成。
+      PWA対応でローカル環境のみで動作。インターネット接続不要で、機密性の高い設計資料も安心して扱える。
+    </p>
+
+    <div class="tags">
+      <span class="tag">タイミングチャート</span>
+      <span class="tag">信号波形</span>
+      <span class="tag">PWA</span>
+      <span class="tag">ローカル動作</span>
+    </div>
+
+    <a href="https://arai-tech.github.io/hakeikun/" class="btn-github" target="_blank" rel="noopener">
+      <svg width="16" height="16" fill="currentColor" viewBox="0 0 24 24"><path d="M12 .3a12 12 0 0 0-3.8 23.4c.6.1.8-.3.8-.6v-2c-3.3.7-4-1.6-4-1.6-.6-1.4-1.4-1.8-1.4-1.8-1-.7.1-.7.1-.7 1.2.1 1.8 1.2 1.8 1.2 1 1.8 2.8 1.3 3.5 1 .1-.8.4-1.3.7-1.6-2.7-.3-5.5-1.3-5.5-5.9 0-1.3.5-2.4 1.2-3.2 0-.4-.5-1.6.2-3.2 0 0 1-.3 3.3 1.2a11.5 11.5 0 0 1 6 0C17 6.1 18 6.4 18 6.4c.7 1.6.2 2.8.1 3.2.8.8 1.2 1.9 1.2 3.2 0 4.6-2.8 5.6-5.5 5.9.5.4.9 1.2.9 2.3v3.3c0 .3.2.7.8.6A12 12 0 0 0 12 .3"/></svg>
+      <span>GitHub で見る</span>
+    </a>
+
+    <!-- decorative waveform -->
+    <svg class="wave-decoration" width="160" height="60" viewBox="0 0 160 60" fill="none">
+      <polyline class="wave-path" points="0,45 20,45 20,15 40,15 40,45 70,45 70,15 90,15 90,45 110,45 110,15 130,15 130,45 160,45"
+        stroke="#3dd6c8" stroke-width="2" fill="none" stroke-linecap="square"/>
+    </svg>
+  </div>
+
+</section>
+
+<!-- DIVIDER -->
+<div class="section-divider reveal">
+  <span class="divider-label">About</span>
+</div>
+
+<!-- ABOUT -->
+<div class="about reveal">
+  <h2>Open Source</h2>
+  <p>
+    これらのツールはすべて GitHub 上でオープンソースとして公開しています。<br>
+    フィードバック・Issue・Pull Request、大歓迎です。<br>
+    より良いツールを一緒に育てていきましょう。
+  </p>
+</div>
+
+<!-- DIVIDER 2 -->
+<div class="section-divider reveal">
+  <span class="divider-label">Credits</span>
+</div>
+
+<!-- CREDITS -->
+<div class="about reveal" style="padding-bottom: 40px;">
+  <h2>開発 &amp; 制作</h2>
+  <p style="margin-bottom: 20px;">
+    血圧君・波形君はいずれも<br>
+    <strong style="color: var(--gold);">Google AI Studio</strong> を活用して開発されました。
+  </p>
+  <p>
+    この紹介ページは<br>
+    <strong style="color: var(--gold);">Claude (Anthropic)</strong> によって生成されました。
+  </p>
+</div>
+
+<!-- FOOTER -->
+<footer class="reveal">
+  <p>© 2025 My Tools — Open Source</p>
+  <div class="footer-links">
+    <a href="https://github.com/" target="_blank" rel="noopener">GitHub</a>
+    <a href="https://arai-tech.github.io/ketsuatsu/" target="_blank" rel="noopener">血圧君</a>
+    <a href="https://arai-tech.github.io/hakeikun/" target="_blank" rel="noopener">波形君</a>
+  </div>
+</footer>
+
+<script>
+  // Scroll reveal
+  const reveals = document.querySelectorAll('.reveal');
+  const io = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        e.target.classList.add('visible');
+        io.unobserve(e.target);
+      }
+    });
+  }, { threshold: 0.1 });
+  reveals.forEach(el => io.observe(el));
+</script>
+</body>
+</html>
